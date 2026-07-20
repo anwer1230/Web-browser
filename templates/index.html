@@ -234,8 +234,14 @@
         .msg.sent .bubble { background:var(--tg-blue); color:#fff; border-bottom-left-radius:4px; }
         .msg.received .bubble { background:var(--tg-bg); color:var(--tg-text); border-bottom-right-radius:4px; border:1px solid var(--tg-border); }
         .msg .bubble:hover { filter:brightness(0.95); }
-        .msg .bubble .sender { font-size:11px; font-weight:700; color:var(--tg-blue-light); margin-bottom:2px; }
+        .msg .bubble .sender { font-size:11px; font-weight:700; color:var(--tg-blue-light); margin-bottom:2px; cursor:pointer; transition:opacity .15s; }
         .msg.sent .bubble .sender { color:rgba(255,255,255,0.8); }
+        .msg .bubble .sender:hover { opacity:.7; }
+        .msg-link { color:#00d2ff !important; text-decoration:underline; word-break:break-all; cursor:pointer; }
+        .msg-link:hover { opacity:.8; }
+        @keyframes ctxFadeIn { from{opacity:0;transform:scale(.95) translateY(-4px)} to{opacity:1;transform:scale(1) translateY(0)} }
+        /* نافذة الملف الشخصي */
+        #senderProfileModal .sp-card { background:var(--tg-bg-secondary);border-radius:20px;overflow:hidden;min-width:300px;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:ctxFadeIn .2s ease; }
         .msg .bubble .text { white-space:pre-wrap; }
         .msg .bubble .foot { font-size:10px; opacity:0.65; margin-top:3px; display:flex; justify-content:flex-end; gap:4px; align-items:center; }
         .msg.sent .bubble .foot { color:rgba(255,255,255,0.75); }
@@ -915,6 +921,9 @@ function renderMessages(msgs) {
         const cls    = isSent ? 'sent' : 'received';
         const time   = m.timestamp ? formatTime(m.timestamp) : '';
         const mDate  = m.timestamp ? formatDate(m.timestamp) : '';
+        const sId    = m.sender_id || '';
+        const sName  = m.sender_name || '';
+        const rawText = (m.text || '').replace(/"/g,'&quot;');
 
         if (mDate && mDate !== lastDate) {
             html += `<div class="date-divider"><span>${mDate}</span></div>`;
@@ -922,10 +931,11 @@ function renderMessages(msgs) {
         }
 
         html += `
-        <div class="msg ${cls}" data-msg-id="${m.id}" oncontextmenu="msgContextMenu(event,'${m.id}')">
+        <div class="msg ${cls}" data-msg-id="${m.id}" data-sid="${sId}" data-sname="${escHtml(sName)}" data-text="${rawText}"
+             oncontextmenu="showMsgMenu(event,this)" onclick="onMsgClick(event,this)">
             <div class="bubble">
-                ${!isSent && m.sender_name ? `<div class="sender">${escHtml(m.sender_name)}</div>` : ''}
-                <div class="text">${escHtml(m.text || '')}</div>
+                ${!isSent && sName ? `<div class="sender" onclick="event.stopPropagation();showSenderProfile(event,'${sId}','${escHtml(sName)}')">${escHtml(sName)}</div>` : ''}
+                <div class="text">${renderTextWithLinks(m.text || '')}</div>
                 <div class="foot">
                     <span>${time}</span>
                     ${isSent ? `<span class="ticks" id="tick-${m.id}">✓</span>` : ''}
@@ -946,6 +956,8 @@ function appendMessage(msg) {
     const isSent = msg.from_me || String(msg.sender_id) === CURRENT_USER_ID;
     const cls    = isSent ? 'sent' : 'received';
     const time   = msg.timestamp ? formatTime(msg.timestamp) : formatTimeNow();
+    const sId    = msg.sender_id || '';
+    const sName  = msg.sender_name || '';
 
     // إزالة حالة الفراغ إن وجدت
     const empty = area.querySelector('.empty-state');
@@ -953,12 +965,16 @@ function appendMessage(msg) {
 
     const div = document.createElement('div');
     div.className  = `msg ${cls}`;
-    div.dataset.msgId = msg.id || '';
-    div.setAttribute('oncontextmenu', `msgContextMenu(event,'${msg.id}')`);
+    div.dataset.msgId  = msg.id || '';
+    div.dataset.sid    = sId;
+    div.dataset.sname  = sName;
+    div.dataset.text   = msg.text || '';
+    div.setAttribute('oncontextmenu', `showMsgMenu(event,this)`);
+    div.setAttribute('onclick',       `onMsgClick(event,this)`);
     div.innerHTML = `
         <div class="bubble">
-            ${!isSent && msg.sender_name ? `<div class="sender">${escHtml(msg.sender_name)}</div>` : ''}
-            <div class="text">${escHtml(msg.text || '')}</div>
+            ${!isSent && sName ? `<div class="sender" onclick="event.stopPropagation();showSenderProfile(event,'${sId}','${escHtml(sName)}')">${escHtml(sName)}</div>` : ''}
+            <div class="text">${renderTextWithLinks(msg.text || '')}</div>
             <div class="foot">
                 <span>${time}</span>
                 ${isSent ? `<span class="ticks" id="tick-${msg.id}">⏳</span>` : ''}
@@ -1129,49 +1145,84 @@ function cancelReply() {
 // ============================================================
 //  قائمة السياق للرسائل
 // ============================================================
-function msgContextMenu(e, msgId) {
-    e.preventDefault();
-    const area  = document.getElementById('messagesArea');
-    const msgEl = area.querySelector(`[data-msg-id="${msgId}"]`);
-    if (!msgEl) return;
-    const text  = msgEl.querySelector('.text')?.textContent || '';
-    const isSent = msgEl.classList.contains('sent');
-
-    // قائمة بسيطة
-    const actions = [
-        { label: '↩️ رد', fn: () => replyTo(msgId, text) },
-        { label: '📋 نسخ', fn: () => navigator.clipboard.writeText(text).then(() => showToast('✅ تم النسخ', 'success')) },
-    ];
-    if (isSent) {
-        actions.push({ label: '✏️ تعديل', fn: () => editMessage(msgId, text) });
-        actions.push({ label: '🗑️ حذف', fn: () => deleteMessage(msgId) });
-    }
-    actions.push({ label: '⭐ حفظ', fn: () => bookmarkMessage(msgId, text) });
-
-    showContextMenu(e.clientX, e.clientY, actions);
+function onMsgClick(e, msgEl) {
+    // لا تُفعِّل عند النقر على رابط أو اسم المرسل
+    if (e.target.classList.contains('msg-link') || e.target.classList.contains('sender')) return;
+    showMsgMenu(e, msgEl);
 }
 
-function showContextMenu(x, y, actions) {
+function showMsgMenu(e, msgEl) {
+    e.preventDefault();
+    e.stopPropagation();
+    const msgId  = msgEl.dataset.msgId;
+    const text   = msgEl.dataset.text || msgEl.querySelector('.text')?.textContent || '';
+    const isSent = msgEl.classList.contains('sent');
+
+    const actions = [
+        { icon: '↩',  label: 'رد',      fn: () => replyTo(msgId, text) },
+        { icon: '⧉',  label: 'نسخ',     fn: () => { try { navigator.clipboard.writeText(text); } catch(_){} showToast('✅ تم النسخ', 'success'); } },
+        { icon: '→',  label: 'تحويل',   fn: () => forwardMessage(msgId) },
+        { icon: '📌', label: 'تثبيت',   fn: () => pinMessage(msgId) },
+        { icon: '⭐', label: 'حفظ',     fn: () => bookmarkMessage(msgId, text) },
+    ];
+    if (isSent) {
+        actions.push({ icon: '✏️', label: 'تعديل', fn: () => editMessage(msgId, text) });
+        actions.push({ icon: '🗑',  label: 'حذف',  danger: true, fn: () => deleteMessage(msgId) });
+    } else {
+        actions.push({ icon: '🗑',  label: 'حذف للجميع', danger: true, fn: () => deleteMessage(msgId) });
+    }
+
+    showRichContextMenu(e.clientX, e.clientY, actions);
+}
+
+function showRichContextMenu(x, y, actions) {
     document.querySelectorAll('.ctx-menu').forEach(el => el.remove());
     const menu = document.createElement('div');
     menu.className = 'ctx-menu';
+
+    // منع الخروج عن حدود الشاشة
+    const menuW = 195, menuH = actions.length * 46 + 12;
+    const px = Math.min(x, window.innerWidth  - menuW - 8);
+    const py = Math.min(y, window.innerHeight - menuH - 8);
+
     menu.style.cssText = `
-        position:fixed; left:${x}px; top:${y}px; z-index:9999;
+        position:fixed; left:${px}px; top:${py}px; z-index:9999;
         background:var(--tg-bg-secondary); border:1px solid var(--tg-border);
-        border-radius:10px; padding:4px 0; box-shadow:var(--tg-shadow);
-        min-width:140px; direction:rtl;
+        border-radius:14px; padding:4px 0; box-shadow:0 8px 32px rgba(0,0,0,.4);
+        min-width:${menuW}px; direction:rtl; animation:ctxFadeIn .15s ease;
     `;
-    actions.forEach(a => {
+    actions.forEach((a, idx) => {
+        if (idx > 0) {
+            const sep = document.createElement('div');
+            sep.style.cssText = 'height:1px;background:var(--tg-border);margin:0 10px;';
+            menu.appendChild(sep);
+        }
         const btn = document.createElement('button');
-        btn.style.cssText = 'display:block;width:100%;padding:8px 14px;background:none;border:none;cursor:pointer;text-align:right;font-size:14px;font-family:Tajawal,sans-serif;color:var(--tg-text);';
-        btn.textContent = a.label;
-        btn.onmouseenter = () => btn.style.background = 'var(--tg-border)';
+        btn.style.cssText = `
+            display:flex;align-items:center;gap:10px;width:100%;
+            padding:11px 16px;background:none;border:none;cursor:pointer;
+            font-size:14px;font-family:Tajawal,sans-serif;color:${a.danger ? '#ff4757' : 'var(--tg-text)'};
+            transition:background .12s;
+        `;
+        btn.innerHTML = `<span style="font-size:16px;min-width:20px;text-align:center;">${a.icon}</span><span>${a.label}</span>`;
+        btn.onmouseenter = () => btn.style.background = 'rgba(255,255,255,.06)';
         btn.onmouseleave = () => btn.style.background = 'none';
         btn.onclick = () => { a.fn(); menu.remove(); };
         menu.appendChild(btn);
     });
     document.body.appendChild(menu);
     setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 10);
+}
+
+/* دالة احتياطية للمتوافقية مع الكود القديم */
+function showContextMenu(x, y, actions) {
+    const mapped = actions.map(a => ({ icon: '', label: a.label, fn: a.fn }));
+    showRichContextMenu(x, y, mapped);
+}
+function msgContextMenu(e, msgId) {
+    const area  = document.getElementById('messagesArea');
+    const msgEl = area?.querySelector(`[data-msg-id="${msgId}"]`);
+    if (msgEl) showMsgMenu(e, msgEl);
 }
 
 // ============================================================
@@ -1203,6 +1254,201 @@ async function bookmarkMessage(msgId, text) {
         const data = await res.json();
         showToast(data.success ? '⭐ تم الحفظ' : '❌ فشل الحفظ', data.success ? 'success' : 'error');
     } catch(e) { showToast('❌ خطأ في الاتصال', 'error'); }
+}
+
+// ============================================================
+//  قائمة سياق الروابط
+// ============================================================
+function showLinkMenu(e, url, type) {
+    e.preventDefault();
+    e.stopPropagation();
+    const isInvite = type === 'invite';
+    const actions = [];
+    if (isInvite) {
+        actions.push({ icon: '🚀', label: 'انضمام للمجموعة', fn: () => joinInviteLink(url) });
+    }
+    actions.push(
+        { icon: '🌐', label: 'فتح',           fn: () => window.open(url, '_blank', 'noopener') },
+        { icon: '📋', label: 'نسخ الرابط',    fn: () => { try { navigator.clipboard.writeText(url); } catch(_){} showToast('✅ تم نسخ الرابط', 'success'); } },
+        { icon: '→',  label: 'إرسال للمحادثة', fn: () => { const inp = document.getElementById('messageInput'); if(inp){ inp.value = url; inp.focus(); } } }
+    );
+    // زر حذف الرسالة الحاوية
+    const msgEl = e.target?.closest?.('.msg');
+    if (msgEl) {
+        const mId = msgEl.dataset.msgId;
+        actions.push({ icon: '🗑', label: 'حذف الرسالة', danger: true, fn: () => deleteMessage(mId) });
+    }
+    showRichContextMenu(e.clientX, e.clientY, actions);
+}
+
+async function joinInviteLink(url) {
+    try {
+        const res  = await fetch('/api/groups/join', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body:   JSON.stringify({ invite_link: url })
+        });
+        const data = await res.json();
+        showToast(data.success ? '✅ تم الانضمام' : '❌ ' + data.message,
+                  data.success ? 'success' : 'error');
+    } catch(_) { showToast('❌ خطأ في الانضمام', 'error'); }
+}
+
+// ============================================================
+//  الملف الشخصي للمرسل
+// ============================================================
+async function showSenderProfile(e, userId, userName) {
+    e.stopPropagation?.();
+
+    // إنشاء النافذة مرة واحدة ثم إعادة استخدامها
+    let modal = document.getElementById('senderProfileModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'senderProfileModal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);';
+        modal.innerHTML = `
+        <div class="sp-card" style="background:var(--tg-bg-secondary);border-radius:20px;overflow:hidden;
+             min-width:300px;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:ctxFadeIn .2s ease;">
+            <div id="spBanner" style="height:100px;display:flex;align-items:center;justify-content:center;">
+                <div id="spAvatar" style="width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;border:3px solid rgba(255,255,255,.2);"></div>
+            </div>
+            <div style="padding:0 20px 20px;text-align:center;">
+                <div id="spName"     style="font-size:20px;font-weight:700;color:var(--tg-text);margin-bottom:4px;"></div>
+                <div id="spUsername" style="font-size:14px;color:#00d2ff;margin-bottom:4px;"></div>
+                <div id="spPhone"    style="font-size:13px;color:var(--tg-text-secondary);margin-bottom:4px;"></div>
+                <div id="spBio"      style="font-size:13px;color:var(--tg-text-secondary);margin:8px 0;line-height:1.5;white-space:pre-wrap;"></div>
+                <div id="spGroups"   style="font-size:13px;color:var(--tg-text-secondary);margin-bottom:16px;"></div>
+                <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+                    <button id="spAddBtn"
+                        style="background:linear-gradient(135deg,#00d2ff,#3a7bd5);border:none;color:#fff;border-radius:10px;padding:9px 14px;cursor:pointer;font-family:Tajawal,sans-serif;font-size:13px;">
+                        ➕ إضافة
+                    </button>
+                    <button id="spMsgBtn"
+                        style="background:rgba(0,210,255,.1);border:1px solid rgba(0,210,255,.2);color:#00d2ff;border-radius:10px;padding:9px 14px;cursor:pointer;font-family:Tajawal,sans-serif;font-size:13px;">
+                        💬 مراسلة
+                    </button>
+                    <button id="spBlockBtn"
+                        style="background:rgba(255,71,87,.12);border:1px solid rgba(255,71,87,.3);color:#ff4757;border-radius:10px;padding:9px 14px;cursor:pointer;font-family:Tajawal,sans-serif;font-size:13px;">
+                        🚫 حظر
+                    </button>
+                </div>
+                <button onclick="document.getElementById('senderProfileModal').style.display='none'"
+                    style="margin-top:12px;background:rgba(255,255,255,.05);border:none;color:var(--tg-text-secondary);
+                           border-radius:8px;padding:7px 20px;cursor:pointer;font-family:Tajawal,sans-serif;font-size:13px;width:100%;">
+                    إغلاق
+                </button>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', ev => { if (ev.target === modal) modal.style.display = 'none'; });
+    }
+
+    modal.style.display = 'flex';
+
+    // لون الأفاتار بناءً على الـ ID
+    const colors = ['#6c5ce7','#00d2ff','#ff6b6b','#f9ca24','#2ecc71','#e17055','#a29bfe','#fd79a8'];
+    const color  = colors[Math.abs(parseInt(userId) || 0) % colors.length];
+    const initLetter = (userName || '?')[0].toUpperCase();
+
+    document.getElementById('spBanner').style.background = `linear-gradient(135deg,${color}88,${color}33)`;
+    document.getElementById('spAvatar').style.background  = color;
+    document.getElementById('spAvatar').textContent       = initLetter;
+    document.getElementById('spName').textContent         = userName || 'مستخدم';
+    document.getElementById('spUsername').textContent     = '';
+    document.getElementById('spPhone').textContent        = '';
+    document.getElementById('spBio').textContent          = '';
+    document.getElementById('spGroups').textContent       = '⏳ جارٍ التحميل...';
+
+    // ربط الأزرار
+    document.getElementById('spAddBtn').onclick = () => addContact(userId, userName);
+    document.getElementById('spBlockBtn').onclick = async () => {
+        if (!confirm(`حظر ${userName}؟`)) return;
+        try {
+            const r = await fetch(`/api/users/${userId}/block`, {method:'POST'});
+            const d = await r.json();
+            showToast(d.success ? '🚫 تم الحظر' : '❌ '+d.message, d.success ? 'success' : 'error');
+            if (d.success) modal.style.display = 'none';
+        } catch(_) { showToast('❌ خطأ', 'error'); }
+    };
+    document.getElementById('spMsgBtn').onclick = () => {
+        modal.style.display = 'none';
+        // افتح المحادثة المباشرة
+        const existing = chatsData?.find(c => String(c.id) === String(userId));
+        if (existing) selectChat(existing.id);
+        else { showToast('💬 جارٍ فتح المحادثة...', 'info'); selectChat(parseInt(userId)); }
+    };
+
+    // جلب الملف الشخصي من الخادم
+    try {
+        const res  = await fetch(`/api/user-profile/${userId}`);
+        const data = await res.json();
+        if (data.success && data.profile) {
+            const p = data.profile;
+            document.getElementById('spUsername').textContent = p.username ? '@' + p.username : '';
+            document.getElementById('spPhone').textContent    = p.phone    ? '📞 ' + p.phone  : '';
+            document.getElementById('spBio').textContent      = p.bio      || '';
+            const cg = p.common_groups_count;
+            document.getElementById('spGroups').textContent   = cg ? `👥 ${cg} مجموعة مشتركة` : '👥 لا توجد مجموعات مشتركة';
+        } else {
+            document.getElementById('spGroups').textContent = '';
+        }
+    } catch(_) {
+        document.getElementById('spGroups').textContent = '';
+    }
+}
+
+// ============================================================
+//  دوال مساعدة للرسائل
+// ============================================================
+function renderTextWithLinks(text) {
+    if (!text) return '';
+    const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+    const parts = text.split(urlRegex);
+    return parts.map((part, i) => {
+        if (i % 2 === 1) { // URL
+            const isInvite = part.includes('t.me/+') || part.includes('t.me/joinchat');
+            const safeUrl  = part.replace(/\\/g,'\\\\').replace(/'/g, '%27');
+            return `<a href="#" class="msg-link" onclick="showLinkMenu(event,'${safeUrl}','${isInvite?'invite':'url'}')">${escHtml(part)}</a>`;
+        }
+        return escHtml(part);
+    }).join('');
+}
+
+async function addContact(userId, userName) {
+    try {
+        const res  = await fetch(`/api/users/${userId}/add-contact`, {method:'POST'});
+        const data = await res.json();
+        showToast(data.success ? '✅ تمت الإضافة' : '❌ ' + data.message,
+                  data.success ? 'success' : 'error');
+    } catch(_) { showToast('❌ خطأ في الاتصال', 'error'); }
+}
+
+async function forwardMessage(msgId) {
+    const names = chatsData?.map(c => `${c.id}: ${c.name}`).slice(0, 10).join('\n') || '';
+    const input = prompt(`أدخل ID المحادثة للتحويل إليها:\n${names}`);
+    if (!input) return;
+    const toChatId = parseInt(input.trim());
+    if (!toChatId) { showToast('⚠️ معرّف غير صالح', 'warning'); return; }
+    try {
+        const res  = await fetch('/api/messages/forward', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body:   JSON.stringify({ from_chat_id: currentChatId, to_chat_id: toChatId, message_ids: [msgId] })
+        });
+        const data = await res.json();
+        showToast(data.success ? '✅ تم التحويل' : '❌ ' + data.message,
+                  data.success ? 'success' : 'error');
+    } catch(_) { showToast('❌ خطأ', 'error'); }
+}
+
+async function pinMessage(msgId) {
+    try {
+        const res  = await fetch('/api/messages/pin', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body:   JSON.stringify({ message_id: msgId, chat_id: currentChatId })
+        });
+        const data = await res.json();
+        showToast(data.success ? '📌 تم التثبيت' : '❌ ' + data.message,
+                  data.success ? 'success' : 'error');
+    } catch(_) { showToast('❌ خطأ', 'error'); }
 }
 
 // ============================================================

@@ -1454,6 +1454,81 @@ def api_get_profile(target_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/api/user-profile/<int:user_id>', methods=['GET'])
+@auth.login_required
+def api_user_profile_detail(user_id):
+    """ملف شخصي مفصَّل: username, phone, bio, common_groups_count"""
+    current_user_id = session.get('user_id')
+    try:
+        async def _fetch(client):
+            from telethon.tl.functions.users import GetFullUserRequest
+            from telethon.tl.functions.messages import GetCommonChatsRequest
+            try:
+                full = await client(GetFullUserRequest(user_id))
+                entity  = full.users[0] if full.users else None
+                full_u  = full.full_user
+                bio     = getattr(full_u, 'about', None) or ''
+                username = getattr(entity, 'username', None) if entity else None
+                phone    = getattr(entity, 'phone', None)    if entity else None
+                first    = getattr(entity, 'first_name', '') or ''
+                last     = getattr(entity, 'last_name',  '') or ''
+                name     = (first + ' ' + last).strip() or str(user_id)
+            except Exception:
+                entity   = None
+                bio      = ''
+                username = None
+                phone    = None
+                name     = str(user_id)
+            # عدد المجموعات المشتركة
+            try:
+                common = await client(GetCommonChatsRequest(user_id=user_id, max_id=0, limit=100))
+                cg_count = len(common.chats)
+            except Exception:
+                cg_count = 0
+            return {
+                'id':                  user_id,
+                'name':                name,
+                'username':            username,
+                'phone':               phone,
+                'bio':                 bio,
+                'common_groups_count': cg_count,
+            }
+        ck = f'uprof:{current_user_id}:{user_id}'
+        cached = _cache_get(ck)
+        if cached:
+            return jsonify({'success': True, 'profile': cached})
+        profile = _run_on_persistent(current_user_id, _fetch)
+        _cache_set(ck, profile, ttl=120)
+        return jsonify({'success': True, 'profile': profile})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/users/<int:target_user_id>/add-contact', methods=['POST'])
+@auth.login_required
+def api_add_contact(target_user_id):
+    """إضافة مستخدم لجهات الاتصال"""
+    user_id = session.get('user_id')
+    try:
+        async def _add(client):
+            from telethon.tl.functions.contacts import AddContactRequest
+            entity = await client.get_entity(target_user_id)
+            first  = getattr(entity, 'first_name', '') or ''
+            last   = getattr(entity, 'last_name',  '') or ''
+            phone  = getattr(entity, 'phone', '') or ''
+            await client(AddContactRequest(
+                id=target_user_id,
+                first_name=first,
+                last_name=last,
+                phone=phone,
+                add_phone_privacy_exception=False,
+            ))
+        _run_on_persistent(user_id, _add)
+        return jsonify({'success': True, 'message': 'تمت الإضافة لجهات الاتصال'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/settings', methods=['GET'])
 @auth.login_required
 def api_get_settings():
