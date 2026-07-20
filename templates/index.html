@@ -162,6 +162,33 @@
         .chat-item .skeleton { animation:skeleton-pulse 1.2s ease-in-out infinite; }
         @keyframes skeleton-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
+        /* ═══ شريط التحديد المتعدد ═══ */
+        .selection-bar {
+            display:flex; align-items:center; padding:0 8px; height:56px;
+            background:var(--tg-blue); flex-shrink:0; gap:4px;
+            animation:selBarIn .2s ease;
+        }
+        @keyframes selBarIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+        .sel-btn {
+            width:40px; height:40px; border-radius:50%; background:none; border:none;
+            color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;
+            font-size:18px; transition:background .15s; flex-shrink:0;
+        }
+        .sel-btn:hover { background:rgba(255,255,255,.18); }
+        .sel-btn.danger { color:#ffaaaa; }
+        .sel-count { font-size:18px; font-weight:700; color:#fff; padding:0 4px; min-width:24px; text-align:center; }
+        /* طبقة ✓ على الأفاتار */
+        .chat-item .av-letter { display:block; }
+        .chat-item .av-check {
+            position:absolute; inset:0; border-radius:50%;
+            background:rgba(0,136,204,.88);
+            display:none; align-items:center; justify-content:center;
+            color:#fff; font-size:19px;
+        }
+        .sel-mode .chat-item .av-check { display:flex; opacity:0; transition:opacity .15s; }
+        .sel-mode .chat-item.selected .av-check { opacity:1; }
+        .sel-mode .chat-item.selected { background:rgba(0,136,204,.13); }
+
         /* حالة فارغة */
         .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:12px; color:var(--tg-text-secondary); }
         .empty-state i { font-size:48px; opacity:0.3; }
@@ -394,7 +421,19 @@
 
     <!-- ===== اللوح الأيسر ===== -->
     <div class="left-pane" id="leftPane">
-        <div class="main-header">
+
+        <!-- شريط التحديد المتعدد (يظهر فقط في وضع التحديد) -->
+        <div class="selection-bar" id="selectionBar" style="display:none;">
+            <button class="sel-btn" onclick="exitSelectionMode()" title="إلغاء"><i class="fas fa-times"></i></button>
+            <span class="sel-count" id="selCount">0</span>
+            <div style="flex:1;"></div>
+            <button class="sel-btn" onclick="pinSelectedChats()" title="تثبيت"><i class="fas fa-thumbtack"></i></button>
+            <button class="sel-btn" onclick="muteSelectedChats()" title="كتم"><i class="fas fa-volume-mute"></i></button>
+            <button class="sel-btn danger" onclick="deleteSelectedChats()" title="حذف"><i class="fas fa-trash"></i></button>
+            <button class="sel-btn" onclick="showSelectionMoreMenu(event)" title="المزيد"><i class="fas fa-ellipsis-v"></i></button>
+        </div>
+
+        <div class="main-header" id="mainHeader">
             <div class="brand">
                 <i class="fab fa-telegram-plane"></i>
                 <span>تليجرام</span>
@@ -786,6 +825,177 @@ async function _fetchRemainingChats(startPage, total) {
 }
 
 // ============================================================
+//  وضع التحديد المتعدد للمحادثات
+// ============================================================
+let _selMode = false;
+const _selectedChats = new Set();
+let _lpTimer = null;
+
+function startChatLongPress(chatId) {
+    cancelChatLongPress();
+    _lpTimer = setTimeout(() => {
+        _lpTimer = null;
+        if (!_selMode) enterSelectionMode(String(chatId));
+        else toggleChatSelection(String(chatId));
+    }, 500);
+}
+
+function cancelChatLongPress() {
+    if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+}
+
+function onChatItemClick(e, chatId) {
+    // إذا انتهى الـ long press مسبقاً → لا تفعل شيئاً (دخل وضع التحديد)
+    if (!_lpTimer && !_selMode) {
+        // نقرة عادية — افتح المحادثة
+        selectChat(chatId);
+        return;
+    }
+    cancelChatLongPress();
+    if (_selMode) toggleChatSelection(String(chatId));
+    else selectChat(chatId);
+}
+
+function enterSelectionMode(chatId) {
+    _selMode = true;
+    _selectedChats.clear();
+    _selectedChats.add(String(chatId));
+    document.getElementById('selectionBar').style.display = 'flex';
+    document.getElementById('mainHeader').style.display  = 'none';
+    document.getElementById('chatList').classList.add('sel-mode');
+    _refreshSelUI();
+}
+
+function exitSelectionMode() {
+    _selMode = false;
+    _selectedChats.clear();
+    document.getElementById('selectionBar').style.display = 'none';
+    document.getElementById('mainHeader').style.display  = '';
+    document.getElementById('chatList').classList.remove('sel-mode');
+    document.querySelectorAll('.chat-item.selected').forEach(el => el.classList.remove('selected'));
+}
+
+function toggleChatSelection(chatId) {
+    const id = String(chatId);
+    if (_selectedChats.has(id)) {
+        _selectedChats.delete(id);
+        if (_selectedChats.size === 0) { exitSelectionMode(); return; }
+    } else {
+        _selectedChats.add(id);
+    }
+    _refreshSelUI();
+}
+
+function _refreshSelUI() {
+    document.getElementById('selCount').textContent = _selectedChats.size;
+    document.querySelectorAll('.chat-item[data-cid]').forEach(el => {
+        el.classList.toggle('selected', _selectedChats.has(el.dataset.cid));
+    });
+}
+
+async function pinSelectedChats() {
+    let ok = 0;
+    for (const id of _selectedChats) {
+        try {
+            const r = await fetch(`/api/chats/${id}/pin`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({pinned:true})
+            });
+            const d = await r.json();
+            if (d.success) ok++;
+        } catch(_) {}
+    }
+    showToast(ok > 0 ? `📌 تم تثبيت ${ok} محادثة` : '❌ فشل التثبيت', ok > 0 ? 'success' : 'error');
+    exitSelectionMode();
+    setTimeout(refreshChats, 800);
+}
+
+async function muteSelectedChats() {
+    let ok = 0;
+    for (const id of _selectedChats) {
+        try {
+            const r = await fetch(`/api/chats/${id}/mute`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({muted:true})
+            });
+            const d = await r.json();
+            if (d.success) ok++;
+        } catch(_) {}
+    }
+    showToast(ok > 0 ? `🔇 تم كتم ${ok} محادثة` : '❌ فشل الكتم', ok > 0 ? 'success' : 'error');
+    exitSelectionMode();
+}
+
+async function deleteSelectedChats() {
+    const count = _selectedChats.size;
+    if (!confirm(`حذف ${count} محادثة؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+    let ok = 0;
+    for (const id of _selectedChats) {
+        try {
+            const r = await fetch(`/api/chats/${id}`, {method:'DELETE'});
+            const d = await r.json();
+            if (d.success) ok++;
+        } catch(_) {}
+    }
+    showToast(ok > 0 ? `🗑️ تم حذف ${ok} محادثة` : '❌ فشل الحذف', ok > 0 ? 'success' : 'error');
+    exitSelectionMode();
+    setTimeout(refreshChats, 800);
+}
+
+function showSelectionMoreMenu(e) {
+    e.stopPropagation();
+    showRichContextMenu(e.clientX, e.clientY, [
+        { icon:'📁', label:'أرشفة',           fn: () => archiveSelectedChats() },
+        { icon:'✅', label:'تعليم كمقروء',     fn: () => markSelectedAsRead() },
+        { icon:'🚫', label:'حظر',             danger:true, fn: () => blockSelectedChats() },
+    ]);
+}
+
+async function archiveSelectedChats() {
+    let ok = 0;
+    for (const id of _selectedChats) {
+        try {
+            const r = await fetch(`/api/chats/${id}/archive`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({archived:true})
+            });
+            const d = await r.json();
+            if (d.success) ok++;
+        } catch(_) {}
+    }
+    showToast(ok > 0 ? `📁 تم أرشفة ${ok} محادثة` : '❌ فشل', ok > 0 ? 'success' : 'error');
+    exitSelectionMode();
+    setTimeout(refreshChats, 800);
+}
+
+async function markSelectedAsRead() {
+    let ok = 0;
+    for (const id of _selectedChats) {
+        try {
+            const r = await fetch(`/api/chats/${id}/read`, {method:'POST'});
+            const d = await r.json();
+            if (d.success) ok++;
+        } catch(_) {}
+    }
+    showToast(ok > 0 ? `✅ تم تعليم ${ok} محادثة كمقروءة` : '❌ فشل', ok > 0 ? 'success' : 'error');
+    exitSelectionMode();
+}
+
+async function blockSelectedChats() {
+    if (!confirm(`حظر ${_selectedChats.size} جهة اتصال؟`)) return;
+    let ok = 0;
+    for (const id of _selectedChats) {
+        try {
+            const r = await fetch(`/api/users/${id}/block`, {method:'POST'});
+            const d = await r.json();
+            if (d.success) ok++;
+        } catch(_) {}
+    }
+    showToast(ok > 0 ? `🚫 تم حظر ${ok}` : '❌ فشل', ok > 0 ? 'success' : 'error');
+    exitSelectionMode();
+}
+
+// ============================================================
 //  عرض قائمة المحادثات
 // ============================================================
 function renderChatList(search = '') {
@@ -802,11 +1012,19 @@ function renderChatList(search = '') {
     }
 
     list.innerHTML = filtered.map(c => `
-        <div class="chat-item ${String(c.id) === String(currentChatId) ? 'active' : ''}"
+        <div class="chat-item ${String(c.id) === String(currentChatId) ? 'active' : ''} ${_selectedChats.has(String(c.id)) ? 'selected' : ''}"
              id="chat-item-${c.id}"
-             onclick="selectChat('${c.id}')">
+             data-cid="${c.id}"
+             onclick="onChatItemClick(event,'${c.id}')"
+             onmousedown="startChatLongPress('${c.id}')"
+             onmouseup="cancelChatLongPress()"
+             onmouseleave="cancelChatLongPress()"
+             ontouchstart="startChatLongPress('${c.id}')"
+             ontouchend="cancelChatLongPress()"
+             ontouchcancel="cancelChatLongPress()">
             <div class="avatar" style="background:${c.color};">
-                ${c.letter}
+                <span class="av-letter">${c.letter}</span>
+                <div class="av-check"><i class="fas fa-check"></i></div>
             </div>
             <div class="info">
                 <div class="row1">
