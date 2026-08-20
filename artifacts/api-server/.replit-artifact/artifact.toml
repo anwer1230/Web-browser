@@ -1,13 +1,13 @@
 kind = "api"
 previewPath = "/"
-title = "Flask App"
+title = "Telegram Pro"
 version = "1.0.0"
 id = "3B4_FFSkEVBkAeYMFRJ2e"
 
 [[services]]
-localPort = 5000
-name = "Flask App"
-paths = ["/"]
+localPort = 3000
+name = "Telegram Pro"
+paths = ["/", "/api", "/socket.io"]
 
 [services.development]
-run = "/home/runner/workspace/.venv/bin/python /home/runner/workspace/main.py"
+run = "cd /home/runner/workspace && pnpm dev"
