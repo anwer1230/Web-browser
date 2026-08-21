@@ -5,6 +5,8 @@ services:
     plan: free
     buildCommand: npm install && npm run build
     startCommand: npm run start
+    healthCheckPath: /api/auth/status
+    autoDeploy: true
     envVars:
       - key: NODE_VERSION
         value: 20.18.0
@@ -13,4 +15,10 @@ services:
       - key: TDLIB_API_ID
         value: "22043994"
       - key: TDLIB_API_HASH
-        value: "56f64582b363d367280db96586b97801"
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
