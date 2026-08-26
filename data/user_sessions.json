@@ -449,7 +449,7 @@
       "user_agent": "Mozilla/5.0+(compatible; Uptim…",
       "cookies": "{}",
       "timestamp": "2026-08-02T00:11:10.259013",
-      "last_seen": "2026-08-26T12:08:16.226319",
+      "last_seen": "2026-08-26T07:36:53.377527",
       "is_active": true,
       "users_state": {
         "user_1": {
@@ -1576,7 +1576,7 @@
       "user_agent": "Mozilla/5.0+(compatible; Uptim…",
       "cookies": "{}",
       "timestamp": "2026-08-01T16:29:03.578664",
-      "last_seen": "2026-08-26T12:03:09.675514",
+      "last_seen": "2026-08-26T12:08:17.864505",
       "is_active": true,
       "users_state": {
         "user_1": {
