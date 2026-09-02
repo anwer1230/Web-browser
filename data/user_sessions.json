@@ -2253,38 +2253,9 @@
       "user_agent": "curl/8.14.1",
       "cookies": "{}",
       "timestamp": "2026-07-17T13:18:09.339905",
-      "last_seen": "2026-08-10T14:23:25.928266",
+      "last_seen": "2026-09-02T21:16:23.285057",
       "is_active": true,
-      "users_state": {
-        "user_1": {
-          "name": "امل العنزي",
-          "phone": "",
-          "account_name": "",
-          "authenticated": false,
-          "connected": false,
-          "is_running": false,
-          "blocked": false,
-          "last_seen": "",
-          "monitoring_active": false,
-          "connected_at": "",
-          "disconnected_at": "",
-          "session_history": []
-        },
-        "user_2": {
-          "name": "حساب 2",
-          "phone": "",
-          "account_name": "",
-          "authenticated": false,
-          "connected": false,
-          "is_running": false,
-          "blocked": false,
-          "last_seen": "",
-          "monitoring_active": false,
-          "connected_at": "",
-          "disconnected_at": "",
-          "session_history": []
-        }
-      }
+      "users_state": {}
     }
   ]
 }
