@@ -1,6 +1,18 @@
 {
   "installations": [
     {
+      "install_id": "fp-2bc9aa0a5a30dd54234f3a4e",
+      "user_id": "user_1",
+      "ip": "127.0.0.x",
+      "geo": {},
+      "user_agent": "Werkzeug/3.1.8",
+      "cookies": "{}",
+      "timestamp": "2026-09-02T21:24:48.507264",
+      "last_seen": "2026-09-02T21:24:48.507264",
+      "is_active": true,
+      "users_state": {}
+    },
+    {
       "install_id": "fp-1049becf6f27b9b2891e7237",
       "user_id": "user_1",
       "ip": "127.0.0.x",
